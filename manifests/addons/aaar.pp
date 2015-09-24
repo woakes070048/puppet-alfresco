@@ -1,10 +1,17 @@
 class alfresco::addons::aaar inherits alfresco::addons {
 
-  $aaarsharefile = "aaar-alfresco-share-CE-v5.0.x.amp"
-  $aaarrepofile = "aaar-alfresco-CE-v5.0.x.amp"
+	$aaarbase = "https://github.com/fcorti/alfresco-audit-analysis-reporting/releases/download/v3.1"
 
-  $aaarbase = "http://downloads.sourceforge.net/project/aaar/Alfresco%20AMP%20packages/Alfresco%20CE%205.0.x"
-
+case($alfresco_version){
+      '4.2.f': {
+          $aaarrepofile = "aaar-repo-v1.1-for-alfresco-CE-v4.2.x.amp"
+          $aaarsharefile = "aaar-share-v1.1-for-alfresco-CE-v4.2.x.amp"
+      }
+  		'5.0.x','NIGHTLY': {
+				  $aaarrepofile = "aaar-repo-v1.1-Alfresco-CE-v5.0.d.amp"
+					$aaarsharefile = "aaar-share-v1.1-Alfresco-CE-v5.0.d.amp"
+      }
+}
   $aaarshareurl = "${aaarbase}/${aaarsharefile}"
   $aaarrepourl = "${aaarbase}/${aaarrepofile}"
 
