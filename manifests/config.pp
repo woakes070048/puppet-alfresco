@@ -1,12 +1,11 @@
 class alfresco::config inherits alfresco {
 
-
- 	case $::osfamily {
-    		'RedHat': {
-			$init_template = "alfresco/tomcat7-init-centos.erb"
+	case $::osfamily {
+				'RedHat': {
+			$init_template = "alfresco/tomcat-init-centos.erb"
 		}
 		'Debian': {
-			$init_template = "alfresco/tomcat7-init.erb"
+			$init_template = "alfresco/tomcat-init.erb"
 		}
 		default:{
 			fail("Unsupported osfamily $osfamily")
@@ -15,9 +14,9 @@ class alfresco::config inherits alfresco {
 
 	if($osfamily == "Debian") {
 		# tomcat memory set in here TODO: what TODO for Centos?
-		file { "/etc/default/tomcat7":
+		file { "/etc/default/tomcat":
 			require => Exec["copy tomcat to ${tomcat_home}"],
-			content => template("alfresco/default-tomcat7.erb")
+			content => template("alfresco/default-tomcat.erb")
 		}
 	}
 
@@ -25,61 +24,42 @@ class alfresco::config inherits alfresco {
 		require => File["${tomcat_home}/shared/classes"],
 		content => template("alfresco/alfresco-global.properties.erb"),
 		ensure => present,
+    owner => 'tomcat',
 	}
 
 	file { "${tomcat_home}/shared/classes/alfresco/web-extension/share-config-custom.xml":
 		require => File["${tomcat_home}/shared/classes/alfresco/web-extension"],
 		ensure => present,
+    owner => 'tomcat',
 		content => template('alfresco/share-config-custom.xml.erb'),
 	}
 
-	file { "/etc/init.d/tomcat7":
+	file { "/etc/init.d/tomcat":
 		ensure => present,
 		content => template($init_template),
 		mode => "0755",
+    owner => 'tomcat',
 	}
 
 	file { "${tomcat_home}/conf/server.xml":
 		ensure => present,
 		source => 'puppet:///modules/alfresco/server.xml',
-		owner => 'tomcat7',
+		owner => 'tomcat',
 	}
 
 	file { "${tomcat_home}/conf/catalina.properties":
 		ensure => present,
 		source => 'puppet:///modules/alfresco/catalina.properties',
-		owner => 'tomcat7',
-	}
-
-
-	# SOLR
-
-	file { "${alfresco_base_dir}/solr/workspace-SpacesStore/conf/solrcore.properties":
-		require => Exec['unpack-solr'],
-		content => template('alfresco/solrcore-workspace.properties.erb'),
-		ensure => present,
-	}
-
-
-	file { "${alfresco_base_dir}/solr/archive-SpacesStore/conf/solrcore.properties":
-		require => Exec['unpack-solr'],
-		content => template('alfresco/solrcore-archive.properties.erb'),
-		ensure => present,
-	}
-
-	file { "${tomcat_home}/conf/Catalina/localhost/solr.xml":
-                content => template('alfresco/solr.xml.erb'),
-		ensure => present,
-	}
-
-	file { "${tomcat_home}/conf/tomcat-users.xml":
-		ensure => present,
-		require => Exec['unpack-tomcat7'],
-		source => 'puppet:///modules/alfresco/tomcat-users.xml',
-		owner => 'tomcat7',
+		owner => 'tomcat',
 	}
 
 	
+	file { "${tomcat_home}/conf/tomcat-users.xml":
+		ensure => present,
+		require => Exec['unpack-tomcat'],
+		source => 'puppet:///modules/alfresco/tomcat-users.xml',
+		owner => 'tomcat',
+	}
 	
 	# admin password
 

@@ -19,7 +19,7 @@
 # Default mail address to use in the 'From' field of sent mails
 #
 # [*alfresco_version*]
-# For now only '4.2.f' is supported
+# '4.2.f', '5.0.x', or 'NIGHTLY'
 #
 # [*download_path*]
 # Where to store downloaded files. Defaults to '/opt/downloads'
@@ -43,6 +43,18 @@
 #
 # [*db_port*]
 # Port of DB server. Default to 3306.
+#
+# [*mail_host*]
+# Address of mail server who will accept mail from us. If left as 
+# 'localhost' then postfix will be installed locally
+#
+# [*mem_xmx*]
+# Equivalent to the -Xmx switch
+#
+# [*mem_xxmaxpermsize*]
+# Equivalent to the -XX:MaxPermSize switch
+#
+#
 #
 # === Examples
 #
@@ -74,20 +86,25 @@ class alfresco (
 	$db_name			= $alfresco::params::db_name,
 	$db_host			= $alfresco::params::db_host,
 	$db_port			= 3306,
+  $mail_host    = 'localhost',
+  $mail_port    = 25,
 	$mem_xmx			= "32G",
-	$mem_xxmaxpermsize		= "256m"
+	$mem_xxmaxpermsize		= "512m",
+  $delay_before_tests = 1,
+  $apt_cache_host = '',
+  $apt_cache_port = 3142,
+  $ssl_cert_path = '',
+  $enable_proxy = true
 ) inherits alfresco::params {
 
-	# all the URLs kept in here, if testing, you can create a 'urls-local.pp'
-	# with nearer files and change this include. 
 	include urls
-
 
 	$admin_pass_hash = calc_ntlm_hash($initial_admin_pass)
 
+  notice("alfresco_version = ${alfresco_version}")
 
 	# add JAVA_OPTS with memory settings - TODO this won't work for CentOS
-	$java_opts = "-Xmx${mem_xmx} -XX:MaxPermSize=${mem_xxmaxpermsize}"
+	$java_opts = "-Xmx${mem_xmx} -Xms${mem_xmx} -XX:MaxPermSize=${mem_xxmaxpermsize} -server"
 
 	# at some point I'll use these for a non-allinone version. For now pre-empting
 	# the change where I can but do not try editing these, please.
@@ -99,7 +116,13 @@ class alfresco (
 	case($alfresco_version){
 		'4.2.f': {
 			$alfresco_ce_url = $urls::alfresco_ce
+      $indexer = 'solr'
+      $cmis_url = '/alfresco/s/cmis'
 		}
+    '5.0.x', 'NIGHTLY': {
+      $indexer = 'solr4'
+      $cmis_url = '/alfresco/cmisatom'
+    }
 		default: {
 			fail("Unsupported version ${alfresco_version}")
 		}	
@@ -107,63 +130,22 @@ class alfresco (
 
 
 	
-  	case $::osfamily {
-    		'RedHat': {
-			$loffice_dl="${urls::loffice_dl_red}"
-			$loffice_name="${urls::loffice_name_red}"
-		}
-		'Debian': {
-			$loffice_dl="${urls::loffice_dl_deb}"
-			$loffice_name="${urls::loffice_name_deb}"
-		}
+ case $::osfamily {
+  'RedHat': {
+		$loffice_dl="${urls::loffice_dl_red}"
+		$loffice_name="${urls::loffice_name_red}"
+	}
+	'Debian': {
+		$loffice_dl="${urls::loffice_dl_deb}"
+		$loffice_name="${urls::loffice_name_deb}"
+  }
 		default:{
 			fail("Unsupported osfamily $osfamily")
 		} 
 	}
 	$lo_install_loc = "/opt/libreoffice4.2"
 
-
-
-
-	#$swftools_src_url = $urls::swftools_src_url
-	
-
-
-
-
-
-
-	#$name_tomcat = "apache-tomcat-7.0.55"
-	#$filename_tomcat = "${name_tomcat}.tar.gz"
-	#$url_tomcat = "http://archive.apache.org/dist/tomcat/tomcat-7/v7.0.55/bin/${filename_tomcat}"
-
-	
-
-
 	$keystorebase = "http://svn.alfresco.com/repos/alfresco-open-mirror/alfresco/HEAD/root/projects/repository/config/alfresco/keystore"
-
-
-	#i#$mysql_connector_name = "mysql-connector-java-5.1.34"
-	#$mysql_connector_file = "${mysql_connector_name}.tar.gz"
-	#$mysql_connector_url = "http://dev.mysql.com/get/Downloads/Connector-J/${mysql_connector_file}"
-
-
-# - oops this is for 5.0 ...
-#	$solr_war_file = "alfresco-solr4-5.0.b-ssl.war"
-#	$solr_war_dl = "https://artifacts.alfresco.com/nexus/service/local/repo_groups/public/content/org/alfresco/alfresco-solr4/5.0.b/$solr_war_file"
-#	
-#	$solr_cfg_file = "alfresco-solr4-5.0.b-config-ssl.zip"
-#	$solr_cfg_dl = "https://artifacts.alfresco.com/nexus/service/local/repo_groups/public/content/org/alfresco/alfresco-solr4/5.0.b/$solr_cfg_file"
-
-
-	#$solr_dl_file = "alfresco-community-solr-4.2.f.zip"
-	#$solr_dl = "http://dl.alfresco.com/release/community/4.2.f-build-00012/${solr_dl_file}"
-
-
-
-	#$swftools_name = "swftools-2013-04-09-1007"
-	#$swftools_dl = "http://www.swftools.org/${swftools_name}.tar.gz"
-
 
 	$alfresco_db_name = $db_name
 	$alfresco_db_user = $db_user
@@ -176,6 +158,44 @@ class alfresco (
 	$alfresco_war_loc = "${alfresco_unpacked}/web-server/webapps"
 
 
+  define safe-download (
+		$url,								# complete url to download the file from
+		$filename,					# the filename of the download package
+		$download_path,			# where to put the file
+		$user = 'tomcat',
+		$timeout = 0,
+		) { 
+		exec { "safe-clean-any-old-${title}":
+			command => "/bin/rm -f ${download_path}/tmp__${filename}",
+			creates => "${download_path}/${filename}",
+			require => File[$download_path],
+			user => $user,
+			timeout => $timeout,
+		} ->  
+		exec { "safe-retrieve-${title}":
+			command => "/usr/bin/wget ${url} -O ${download_path}/tmp__${filename}",
+			creates => "${download_path}/${filename}",
+			user => $user,
+			timeout => $timeout,
+		} ->
+		exec { "safe-move-${title}":
+			command => "/bin/mv ${download_path}/tmp__${filename} ${download_path}/${filename}",
+			creates => "${download_path}/${filename}",
+			user => $user,
+			timeout => $timeout,
+		}   
+	}
+
+
+	# write a config file for BART, will also make the templated files refer to these:
+  file { "${alfresco_base_dir}/scripts":
+	  ensure => directory,
+		require => File[$alfresco_base_dir],
+	} -> 
+	file { "${alfresco_base_dir}/scripts/bart.conf":
+		ensure => present,
+		content => "ALF_BASE_DIR=${alfresco_base_dir}\nINDEXER=${indexer}\nDB_NAME=${db_name}\nDB_PASS=${db_pass}\nDB_HOST=${db_host}\nDB_USER=${db_user}\n"
+	}
 
 
 	#http://askubuntu.com/a/519783/33804
@@ -187,6 +207,14 @@ class alfresco (
 		}
 	}
 
+	# on centos - no suitable provider for cron
+	if($osfamily == 'RedHat'){
+		package { 'cronie':
+			ensure => installed,
+			before => Class['alfresco::install'],
+		}
+	}	
+
 
 	# for some reason packages are being applied out of order, so bind them to a run stage:
 	stage { 'deps':
@@ -195,10 +223,21 @@ class alfresco (
 	class { 'alfresco::packages':
 		stage => 'deps',
 	}
-	
+	stage { 'aptcache':
+    before => Stage['deps'],
+  }
+  class { 'alfresco::aptcache':
+    stage => 'aptcache',
+  }
+  stage { 'nightly':
+    before => Stage['main'],
+  }
+  class { 'alfresco::nightly':
+  }
 
 	anchor { 'alfresco::begin': } ->
 	class { 'alfresco::install': } ->
+	class { 'alfresco::install::solr': } ->
 	class { 'alfresco::addons': } ->
 	class { 'alfresco::config': 
 		notify => Class['alfresco::service'],

@@ -1,21 +1,23 @@
 #!/bin/bash
 
-
 cd "`dirname $0`"
 
-source install/depends.sh
-source install/utils.sh
-source install/params.sh
+if [ $UID != 0 -a $EUID != 0 ]
+then
+	echo You must be root to run the installer
+	exit
+fi
 
-RES_COL=30
-MOVE_TO_COL="echo -en \\033[${RES_COL}G"
-NUMPARAMS="${#params[@]}"
+# Whatever the contents of $CONF we expect to see at least a
+# ${CONF}_params.sh and a ${CONF}_output.sh
+#
+# We may also optionally find ${CONF}_pre.sh and ${CONF}_install.sh
+# and if we find them we run them before and after 
+
+# bootstrap bashconf
+git submodule init
+git submodule update
 
 
-read_answers
-while [ true ]
-do
-	bee_banner
-	paramloop
-	read_entry
-done
+export CONF=config/ootb
+source bashconf/bashconf.sh

@@ -1,70 +1,108 @@
 class alfresco::packages inherits alfresco {
 
-  	case $::osfamily {
-    		'RedHat': {
 
-			exec { "get-repoforge":
-				command => "yum install -y http://pkgs.repoforge.org/rpmforge-release/rpmforge-release-0.5.3-1.el6.rf.x86_64.rpm",
-				path => "/bin:/usr/bin",
-				creates => "/etc/yum.repos.d/rpmforge.repo",
-				
-			}
-
-			Exec["get-repoforge"] -> Package <| |>
+  define ensure_packages ($ensure = "present") {
+    if defined(Package[$title]) {}
+    else {
+      package { $title : ensure => $ensure, }
+    }
+  }
 
 
-		    	$packages = [ 
-				"git", 
-				"java-1.7.0-openjdk",
-		 		"unzip",
-				"curl",
-				"ghostscript", 
-				"haveged",
-		 	] 
-			$rmpackages = [ 
-			]
-		}
-		'Debian': {
-		    	$packages = [ 
-				"gdebi-core",
-				"git", 
-				"openjdk-7-jdk",
-		 		"unzip",
-				"curl",
-				"fonts-liberation", 
-				"fonts-droid", 
-				"imagemagick", 
-				"ghostscript", 
-				"libjpeg62", 
-				"libpng3",
-				"haveged",
-		 	] 
-			$rmpackages = [ 
-				"openjdk-6-jdk",
-		 		"openjdk-6-jre-lib",
-			]
-			exec { "apt-update":
-			    	command => "/usr/bin/apt-get update",
-				schedule => "nightly",
-			}
-		}
-		default:{
-			fail("Unsupported osfamily $osfamily")
-		} 
-	}
+  case $::osfamily {
+    'RedHat': {
 
-	schedule { 'nightly':
-		period => daily,
-		range  => "2 - 4",
-	}
+    exec { "get-repoforge":
+      command => "yum install -y http://pkgs.repoforge.org/rpmforge-release/rpmforge-release-0.5.3-1.el${operatingsystemmajrelease}.rf.x86_64.rpm",
+      path => "/bin:/usr/bin",
+      creates => "/etc/yum.repos.d/rpmforge.repo",
+    }
+
+    # TODO no idea if this is actually effective
+    exec { "guard-against-prev-broken":
+      #command => "yum clean all; yum clean headers; yum complete-transaction",
+      command => "yum clean all; yum clean headers",
+      path => "/bin:/usr/bin",
+    }
+
+    class { 'epel':
+    }
+
+    Exec['guard-against-prev-broken'] -> Class['epel'] -> Exec["get-repoforge"] -> Package <| |>
 
 
+    $packages = [
+      "wget",
+      "git",
+      "zip",
+      "unzip",
+      "curl",
+      "ghostscript",
+      "haveged",
+    ]
 
-    	package { $packages:
-        	ensure => "installed", 
-    	}
+    $rmpackages = [
+      ]
+    }
 
-	package { $rmpackages:
-		ensure => "absent",
-	}
+    'Debian': {
+
+      if $java_version == 8 {
+        $jpackage=""
+        # auto accept oracle license: http://askubuntu.com/a/190674/33804
+
+	      class { 'apt': } ->
+        apt::ppa { 'ppa:webupd8team/java': } ->
+	      package { 'oracle-java8-installer':
+          ensure => installed,
+        }
+      } else {
+        $jpackage="openjdk-7-jdk"
+        ensure_packages { "$jpackage": }
+      }
+
+
+      $packages = [
+        "gdebi-core",
+        "git",
+        "unzip",
+        "zip",
+        "curl",
+        "fonts-liberation",
+        "fonts-droid",
+        "imagemagick",
+        "ghostscript",
+        "libjpeg62",
+        "libpng3",
+        "haveged",
+        "sudo",
+        "libxinerama1",
+      ]
+      $rmpackages = [
+        "openjdk-6-jdk",
+        "openjdk-6-jre-lib",
+      ]
+      exec { "apt-update":
+        command => "/usr/bin/apt-get update",
+        schedule => "nightly",
+      }
+
+    }
+    default:{
+      fail("Unsupported osfamily $osfamily")
+    }
+  }
+
+  schedule { 'nightly':
+    period => daily,
+    range  => "2 - 4",
+  }
+
+  ensure_packages{ $packages:
+    ensure => "installed",
+  }
+
+  ensure_packages { $rmpackages:
+    ensure => "absent",
+  }
 }
